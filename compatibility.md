@@ -11,7 +11,7 @@ version.
 
 | Package name | Minimum supported version | Latest supported version | Introduced in* |
 | --- | --- | --- | --- |
-| `@apollo/gateway` | 2.3.0 | 2.7.8 | `@newrelic/apollo-server-plugin@1.0.0` |
+| `@apollo/gateway` | 2.3.0 | 2.8.0 | `@newrelic/apollo-server-plugin@1.0.0` |
 | `@apollo/server` | 4.0.0 | 4.10.4 | `@newrelic/apollo-server-plugin@2.1.0` |
 | `@aws-sdk/client-bedrock-runtime` | 3.0.0 | 3.583.0 | 11.13.0 |
 | `@aws-sdk/client-dynamodb` | 3.0.0 | 3.585.0 | 8.7.1 |
