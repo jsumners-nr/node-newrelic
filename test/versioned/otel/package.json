@@ -1,0 +1,19 @@
+{
+  "name": "otel-tests",
+  "targets": [{"name":"@opentelemetry/sdk-trace-node","minAgentVersion":"12.16.0"}],
+  "version": "0.0.0",
+  "private": true,
+  "tests": [
+    {
+      "engines": {
+        "node": ">=18"
+      },
+      "dependencies": {
+        "@opentelemetry/sdk-trace-node": ">=1.26.0"
+      },
+      "files": [
+        "otel.test.js"
+      ]
+    }
+  ]
+}

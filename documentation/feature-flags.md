@@ -8,6 +8,12 @@ Any prerelease flags can be enabled or disabled in your agent config by adding a
 
 ## Current prerelease feature flags
 
+#### otel_sdk
+* Enabled by default: `false`
+* Configuration: `{ feature_flag: { otel_sdk: true|false }}`
+* Environment Variable: `NEW_RELIC_FEATURE_FLAG_OTEL_SDK`
+* Description: Enables utilizing OpenTelemetry instrumentations.
+
 #### promise_segments
 * Enabled by default: `false`  
 * Configuration: `{ feature_flag: { promise_segments: true|false }}`
