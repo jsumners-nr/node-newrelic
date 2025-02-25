@@ -62,7 +62,6 @@ async function createAwsLambdaApiServer() {
 }
 
 function httpRequestHandler(req, res) {
-  console.log('incoming headers:', req.headers)
   const url = new URL(`http://localhost${req.url}`)
   const path = url.pathname
 

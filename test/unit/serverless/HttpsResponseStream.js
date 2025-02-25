@@ -19,4 +19,4 @@ class HttpsResponseStream {
   }
 }
 
-module.exports = { HttpsResponseStream }
+module.exports = HttpsResponseStream
