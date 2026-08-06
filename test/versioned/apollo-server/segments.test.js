@@ -7,8 +7,10 @@
 
 const test = require('node:test')
 const promiseResolvers = require('../../lib/promise-resolvers')
+const helper = require('../../lib/agent_helper')
 const { executeQuery, executeQueryBatch } = require('../../lib/apollo/test-client')
 const { afterEach, setupCoreTest } = require('../../lib/apollo/test-tools')
+const { makeDbClient } = require('../../lib/apollo/data-definitions')
 const {
   checkResult,
   baseSegment,
@@ -912,13 +914,25 @@ test('skipped scalar segment: async (db-querying) resolver still runs in the ope
   // subscriber invokes the skipped resolver directly rather than through
   // tracer.runInContext; this asserts that shortcut preserves the context.
   //
-  // The `Book.summary` resolver simulates a database round-trip with a
-  // `setTimeout` (timer instrumentation is enabled), which produces a
-  // `timers.setTimeout` segment. Because the scalar itself is skipped, that
-  // segment must nest directly under the operation segment. If the resolver ran
-  // outside the operation context, the timer segment would be orphaned (nested
-  // under the transaction root instead) and this assertion would fail.
-  await setupCoreTest({ t, testDir: __dirname })
+  // To prove context is preserved WITHOUT depending on any auto-instrumentation
+  // (timers, datastore, etc. -- which may be removed), the `Book.summary`
+  // resolver wraps its simulated database query in a segment created through
+  // the public `startSegment` API. `startSegment` nests the segment under
+  // whatever segment is active when it runs, so the segment appears under the
+  // operation segment only if the resolver ran in the operation context. If the
+  // context were lost, `startSegment` would find no active segment and record
+  // nothing -- so the segment's presence and position is the proof.
+  const DB_SEGMENT_NAME = 'Datastore/statement/Custom/summary/select'
+  await setupCoreTest({
+    t,
+    testDir: __dirname,
+    // Provide the resolver a db client that records the query via startSegment.
+    // Passed as a factory because the public API only exists once the agent is
+    // loaded inside setupCoreTest.
+    contextValue() {
+      return { dbClient: makeDbClient(helper.getAgentApi(), DB_SEGMENT_NAME) }
+    }
+  })
   const prefix = semver.gte(t.nr.apolloServerPkg.apolloVersion, '5.0.0')
     ? 'WebTransaction/Nodejs/POST'
     : 'WebTransaction/Expressjs/POST'
@@ -930,8 +944,8 @@ test('skipped scalar segment: async (db-querying) resolver still runs in the ope
   const expectedName = 'GetBookSummaries'
   // `libraries` (top-level) and `Library.books` (object field) both keep their
   // segments; `Book.summary` is a non-top-level scalar whose segment is skipped.
-  // Only the `summary` resolver does async work, so every `timers.setTimeout`
-  // segment is unambiguously attributable to the skipped scalar.
+  // Only the `summary` resolver does async work, so every db-query segment is
+  // unambiguously attributable to the skipped scalar.
   const query = `query ${expectedName} {
     libraries {
       books {
@@ -950,14 +964,12 @@ test('skipped scalar segment: async (db-querying) resolver still runs in the ope
         // Kept segments for the object fields.
         `${RESOLVE_PREFIX}/libraries`,
         `${RESOLVE_PREFIX}/libraries.books`,
-        // The skipped scalar's resolver runs in the operation context, so its
-        // simulated database query nests directly under the operation segment
-        // rather than orphaning. There is no `.../libraries.books.summary`
-        // resolve segment, which is why the timer is a direct child here. The
-        // trailing array binds to `timers.setTimeout` (the string it follows),
-        // asserting the query callback nests under the timer.
-        'timers.setTimeout',
-        ['Callback: summaryDbQuery']
+        // The skipped scalar's resolver runs in the operation context, so the
+        // segment it creates for the simulated database query nests directly
+        // under the operation segment rather than orphaning. There is no
+        // `.../libraries.books.summary` resolve segment (the scalar is skipped),
+        // which is why the db-query segment is a direct child of the operation.
+        DB_SEGMENT_NAME
       ]
     ])
     const expectedSegments = constructSegments(firstSegmentName, operationSegments)
@@ -965,7 +977,8 @@ test('skipped scalar segment: async (db-querying) resolver still runs in the ope
     assertSegments(transaction.trace, transaction.trace.root, expectedSegments, { exact: false })
 
     // Belt-and-suspenders: confirm the skipped scalar produced no resolve
-    // segment anywhere in the trace.
+    // segment anywhere in the trace, and that the db-query segment really did
+    // run inside a context (i.e. it was recorded at all).
     const segments = []
     const collect = (segment) => {
       segments.push(segment)
@@ -978,6 +991,8 @@ test('skipped scalar segment: async (db-querying) resolver still runs in the ope
       (segment) => segment.name === `${RESOLVE_PREFIX}/libraries.books.summary`
     )
     assert.equal(scalarResolveSegment, undefined, 'skipped scalar should not create a resolve segment')
+    const dbSegment = segments.find((segment) => segment.name === DB_SEGMENT_NAME)
+    assert.ok(dbSegment, 'db-query segment should be recorded (resolver ran inside a context)')
   })
 
   executeQuery(serverUrl, query, (err, result) => {
