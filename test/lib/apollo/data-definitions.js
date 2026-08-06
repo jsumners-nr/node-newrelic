@@ -92,6 +92,12 @@ function getTypeDefs(gql) {
       isbn: String
       author: Author!
       category: BookCategory
+      # A scalar field whose resolver must query a database to produce its
+      # value. Because it is a non-top-level scalar, under the default config
+      # (scalars: false) the resolve subscriber creates NO segment for it, yet
+      # still runs this resolver -- see the skipped-segment regression test in
+      # the apollo-server segments suite.
+      summary: String
     }
 
     enum BookCategory {
@@ -198,6 +204,18 @@ const resolvers = {
       return {
         name: parent.author
       }
+    },
+    // Simulates a resolver that queries a database (async I/O) before returning
+    // its scalar value. The `setTimeout` stands in for the query round-trip and,
+    // because timer instrumentation is enabled in the tests, produces a
+    // `timers.setTimeout` segment. Where that segment nests reveals whether the
+    // resolver ran inside the correct async context.
+    summary(parent) {
+      return new Promise((resolve) => {
+        setTimeout(function summaryDbQuery() {
+          resolve(`${parent.title} by ${parent.author}`)
+        }, 0)
+      })
     }
   },
   SearchResult: {

@@ -902,6 +902,94 @@ for (const scalarTest of segmentsTests) {
   })
 }
 
+test('skipped scalar segment: async (db-querying) resolver still runs in the operation context', async (t) => {
+  // Regression guard for the resolve subscriber's skipped-segment optimization.
+  //
+  // Under the default config (apollo_server.scalars = false) a non-top-level
+  // scalar field creates NO resolve segment, but the subscriber still runs the
+  // field's resolver. Most real resolvers query a database (async I/O) before
+  // returning, so this must happen inside the operation's async context. The
+  // subscriber invokes the skipped resolver directly rather than through
+  // tracer.runInContext; this asserts that shortcut preserves the context.
+  //
+  // The `Book.summary` resolver simulates a database round-trip with a
+  // `setTimeout` (timer instrumentation is enabled), which produces a
+  // `timers.setTimeout` segment. Because the scalar itself is skipped, that
+  // segment must nest directly under the operation segment. If the resolver ran
+  // outside the operation context, the timer segment would be orphaned (nested
+  // under the transaction root instead) and this assertion would fail.
+  await setupCoreTest({ t, testDir: __dirname })
+  const prefix = semver.gte(t.nr.apolloServerPkg.apolloVersion, '5.0.0')
+    ? 'WebTransaction/Nodejs/POST'
+    : 'WebTransaction/Expressjs/POST'
+  t.nr.TRANSACTION_PREFIX = prefix
+
+  const { agent, serverUrl } = t.nr
+  const { promise, resolve } = promiseResolvers()
+
+  const expectedName = 'GetBookSummaries'
+  // `libraries` (top-level) and `Library.books` (object field) both keep their
+  // segments; `Book.summary` is a non-top-level scalar whose segment is skipped.
+  // Only the `summary` resolver does async work, so every `timers.setTimeout`
+  // segment is unambiguously attributable to the skipped scalar.
+  const query = `query ${expectedName} {
+    libraries {
+      books {
+        summary
+      }
+    }
+  }`
+
+  const operationPart = `query/${expectedName}/libraries.books.summary`
+
+  agent.once('transactionFinished', (transaction) => {
+    const firstSegmentName = baseSegment(operationPart, prefix)
+    const operationSegments = constructOperationSegments(t.nr, [
+      `${OPERATION_PREFIX}/${operationPart}`,
+      [
+        // Kept segments for the object fields.
+        `${RESOLVE_PREFIX}/libraries`,
+        `${RESOLVE_PREFIX}/libraries.books`,
+        // The skipped scalar's resolver runs in the operation context, so its
+        // simulated database query nests directly under the operation segment
+        // rather than orphaning. There is no `.../libraries.books.summary`
+        // resolve segment, which is why the timer is a direct child here. The
+        // trailing array binds to `timers.setTimeout` (the string it follows),
+        // asserting the query callback nests under the timer.
+        'timers.setTimeout',
+        ['Callback: summaryDbQuery']
+      ]
+    ])
+    const expectedSegments = constructSegments(firstSegmentName, operationSegments)
+
+    assertSegments(transaction.trace, transaction.trace.root, expectedSegments, { exact: false })
+
+    // Belt-and-suspenders: confirm the skipped scalar produced no resolve
+    // segment anywhere in the trace.
+    const segments = []
+    const collect = (segment) => {
+      segments.push(segment)
+      for (const child of transaction.trace.getChildren(segment.id)) {
+        collect(child)
+      }
+    }
+    collect(transaction.trace.root)
+    const scalarResolveSegment = segments.find(
+      (segment) => segment.name === `${RESOLVE_PREFIX}/libraries.books.summary`
+    )
+    assert.equal(scalarResolveSegment, undefined, 'skipped scalar should not create a resolve segment')
+  })
+
+  executeQuery(serverUrl, query, (err, result) => {
+    assert.ifError(err)
+    checkResult(assert, result, () => {
+      resolve()
+    })
+  })
+
+  await promise
+})
+
 test('fragmented trace does not add segments to trace but still records metrics for operation/resolver actions', async (t) => {
   // set the max_trace_segments to 7 to exclude capturing the operation and resolver segments as part of tx trace
   // see: https://github.com/newrelic/newrelic-node-apollo-server-plugin/issues/344
