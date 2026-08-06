@@ -50,8 +50,7 @@ async function setupCoreTest({ t, testDir, agentConfig = {}, contextValue } = {}
   // Apollo context (the resolver's third argument). It may be a plain value or
   // a function of the loaded `agent` (useful when the value needs the agent's
   // public API, which only exists after the agent is loaded). Resolvers that
-  // don't read the context are unaffected, so this is a no-op for existing
-  // tests.
+  // don't read the context are unaffected.
   const listenOptions = { listen: { port: 0 } }
   if (contextValue !== undefined) {
     const resolved = typeof contextValue === 'function' ? contextValue(agent) : contextValue

@@ -19,6 +19,7 @@ specific functionality
 test files in the suite may be run directly as
 `node --test test/versioned/<suite>/<test_file>`
 - When opening Pull Requests, always open them in draft mode
+- When adding comments, do not add useless "existing X" clauses
 
 ## Commands
 npm run services:start # start Docker services

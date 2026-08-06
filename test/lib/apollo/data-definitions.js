@@ -20,8 +20,7 @@ function simulateDbQuery() {
 }
 
 // The default database client used when a test does not inject its own. It just
-// performs the async round-trip; it creates no segment, so existing tests that
-// happen to select `summary` see no extra segments.
+// performs the async round-trip; it does not create a segment.
 const DEFAULT_DB_CLIENT = {
   querySummary: simulateDbQuery
 }
